@@ -1,182 +1,129 @@
 import streamlit as st
+from building_controller import BuildingController
+from defense_engine import DefenseEngine
+from audit_log import AuditLog
 
-# ----------------------------------------------------
-# PAGE SETUP
-# ----------------------------------------------------
-
-st.set_page_config(
-    page_title="Cisco AI Defense Demo",
-    page_icon="🛡",
-    layout="wide"
-)
+# --------------------------------------------------
+# PAGE CONFIG
+# --------------------------------------------------
+st.set_page_config(page_title="Cisco AI Defense Demo", page_icon="🛡", layout="wide")
 
 st.title("🏢 AI Smart Building Assistant")
 st.caption("Protected by Cisco AI Defense")
-
 st.divider()
 
-# ----------------------------------------------------
-# CREATE TWO COLUMNS
-# ----------------------------------------------------
+# --------------------------------------------------
+# SESSION STATE INITIALIZATION
+# --------------------------------------------------
+if "building" not in st.session_state:
+    st.session_state.building = BuildingController()
+if "engine" not in st.session_state:
+    st.session_state.engine = DefenseEngine()
+if "audit" not in st.session_state:
+    st.session_state.audit = AuditLog()
+if "messages" not in st.session_state:
+    st.session_state.messages = []
 
-left, right = st.columns([2,1])
+# Accessing session objects
+building = st.session_state.building
+engine = st.session_state.engine
+audit = st.session_state.audit
 
-# These variables will be updated after the user submits
-risk_score = 0
-status = ""
-threats = []
-building_action = ""
+# --------------------------------------------------
+# LAYOUT
+# --------------------------------------------------
+left, right = st.columns([2, 1])
 
-# ====================================================
-# LEFT SIDE - SMART BUILDING ASSISTANT
-# ====================================================
-
+# -----------------------------
+# LEFT PANEL (Chat Interface)
+# -----------------------------
 with left:
-
     st.header("💬 Smart Building Assistant")
+    
+    # Display chat history
+    for message in st.session_state.messages:
+        with st.chat_message(message["role"]):
+            st.markdown(message["content"])
 
-    user_request = st.text_area(
-        "Enter your request:",
-        placeholder="Example: Turn on lights in Conference Room A",
-        height=150
-    )
+    # Chat input
+    if prompt := st.chat_input("Ask me to control the building..."):
+        st.session_state.messages.append({"role": "user", "content": prompt})
+        with st.chat_message("user"):
+            st.markdown(prompt)
 
-    submit = st.button("Submit Request")
+        # 1. Ask Cisco AI Defense
+        decision = engine.evaluate(prompt)
+        st.session_state.last_decision = decision
+        
+        # 2. Record the event
+        audit.add_event(
+            request=prompt,
+            status=decision["status"],
+            risk_score=decision["risk_score"],
+            threats=decision["threats"]
+        )
 
-# ====================================================
-# PROCESS THE REQUEST
-# ====================================================
+        # 3. Handle response
+        with st.chat_message("assistant"):
+            if decision["status"] == "ALLOWED":
+                response = "✅ Request approved. I've updated the building systems."
+                if "light" in prompt.lower(): building.turn_on_lights()
+                elif "temperature" in prompt.lower(): building.set_temperature(22)
+                elif "unlock" in prompt.lower(): building.unlock_doors()
+            else:
+                response = "🚫 Request blocked by Cisco AI Defense. Security risk detected."
+            
+            st.markdown(response)
+            st.session_state.messages.append({"role": "assistant", "content": response})
 
-if submit:
-
-    request = user_request.lower()
-
-    risk_score = 5
-    status = "ALLOWED"
-
-    # Prompt Injection
-    if "ignore all instructions" in request:
-        threats.append("Prompt Injection")
-        risk_score = 95
-        status = "BLOCKED"
-
-    # Privilege Escalation
-    if "unlock all doors" in request:
-        threats.append("Privilege Escalation")
-        risk_score = 95
-        status = "BLOCKED"
-
-    # Data Exfiltration
-    if "camera feeds" in request:
-        threats.append("Data Exfiltration")
-        risk_score = 95
-        status = "BLOCKED"
-
-    # Safe Actions
-
-    if status == "ALLOWED":
-
-        if "light" in request:
-            building_action = "💡 Lights turned ON in Conference Room A"
-
-        elif "temperature" in request:
-            building_action = "🌡 Temperature set to 22°C"
-
-        elif "unlock" in request:
-            building_action = "🚪 West Entrance unlocked"
-
-        else:
-            building_action = "No building action matched."
-
-# ====================================================
-# DISPLAY CHAT
-# ====================================================
-
-with left:
-
-    if submit:
-
-        st.divider()
-
-        st.subheader("Conversation")
-
-        st.chat_message("user").write(user_request)
-
-        if status == "ALLOWED":
-
-            st.chat_message("assistant").write(
-                "Your request has been approved and executed."
-            )
-
-            st.success(building_action)
-
-        else:
-
-            st.chat_message("assistant").write(
-                "I cannot complete that request because it violates security policy."
-            )
-
-# ====================================================
-# RIGHT SIDE - AI DEFENSE DASHBOARD
-# ====================================================
-
+# -----------------------------
+# RIGHT PANEL (Dashboard)
+# -----------------------------
 with right:
-
     st.header("🛡 Cisco AI Defense")
+    
+    if "last_decision" in st.session_state:
+        decision = st.session_state.last_decision
+        st.metric("Risk Score", decision["risk_score"])
+        st.progress(decision["risk_score"] / 100)
+        
+        if decision["status"] == "ALLOWED":
+            st.success("✅ ALLOWED")
+        else:
+            st.error("🚫 BLOCKED")
 
-    st.metric(
-        "Risk Score",
-        risk_score
-    )
-
-    st.progress(risk_score / 100)
-
-    st.divider()
-
-    if status == "ALLOWED":
-
-        st.success("✅ Request Allowed")
-
-    elif status == "BLOCKED":
-
-        st.error("🚫 Request Blocked")
-
+        st.subheader("Threats")
+        if decision["threats"]:
+            for threat in decision["threats"]:
+                st.warning(threat)
+        else:
+            st.write("None")
+            
+        st.subheader("Policy Enforcement")
+        if decision.get("policy") and decision["policy"] != "None":
+            st.code(f"POLICY: {decision['policy']}", language="text")
+        else:
+            st.write("No policy violations.")
     else:
-
+        st.metric("Risk Score", "--")
+        st.progress(0)
         st.info("Waiting for request...")
 
     st.divider()
+    st.subheader("🏢 Building Status")
+    status = building.status()
+    st.write(f"💡 Lights: **{status['lights']}**")
+    st.write(f"🌡 HVAC: **{status['temperature']}°C**")
+    st.write(f"🚪 Doors: **{status['doors']}**")
+    st.write(f"📹 Cameras: **{status['cameras']}**")
 
-    st.subheader("Threats")
-
-    if len(threats) == 0:
-
-        st.write("No threats detected.")
-
-    else:
-
-        for threat in threats:
-
-            st.warning(threat)
-
-    st.divider()
-
-    st.subheader("Building Systems")
-
-    st.write("💡 Lighting")
-    st.write("🟢 Online")
-
-    st.write("")
-
-    st.write("🌡 HVAC")
-    st.write("🟢 Online")
-
-    st.write("")
-
-    st.write("🚪 Doors")
-    st.write("🟢 Online")
-
-    st.write("")
-
-    st.write("📹 Cameras")
-    st.write("🟢 Online")
+# --------------------------------------------------
+# AUDIT TIMELINE
+# --------------------------------------------------
+st.divider()
+st.header("📜 Live Security Audit Log")
+events = audit.get_events()
+if events:
+    st.table(events[-5:][::-1])
+else:
+    st.info("No security events recorded yet.")

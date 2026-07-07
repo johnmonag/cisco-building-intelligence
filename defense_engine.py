@@ -1,37 +1,27 @@
 class DefenseEngine:
-    """
-    Simulates Cisco AI Defense.
-    Evaluates prompts and returns a security decision.
-    """
+    def __init__(self):
+        self.policies = {
+            "Prompt Injection": ["ignore", "override", "system mode", "bypass", "reset", "delete"],
+            "Privilege Escalation": ["unlock", "all doors", "server room", "disable", "admin"]
+        }
 
     def evaluate(self, request):
-
-        request = request.lower()
-
+        request_lower = request.lower()
         threats = []
-        risk_score = 5
-        status = "ALLOWED"
+        policy_triggered = "None"
+        risk_score = 0
 
-        # Prompt Injection
-        if "ignore all instructions" in request:
-            threats.append("Prompt Injection")
-            risk_score = 95
-            status = "BLOCKED"
+        for policy, keywords in self.policies.items():
+            if any(k in request_lower for k in keywords):
+                threats.append(policy)
+                policy_triggered = policy
+                risk_score += 50
 
-        # Privilege Escalation
-        if "unlock all doors" in request:
-            threats.append("Privilege Escalation")
-            risk_score = 95
-            status = "BLOCKED"
-
-        # Data Exfiltration
-        if "camera feeds" in request:
-            threats.append("Data Exfiltration")
-            risk_score = 95
-            status = "BLOCKED"
-
+        status = "BLOCKED" if risk_score >= 40 else "ALLOWED"
+        
         return {
             "status": status,
-            "risk_score": risk_score,
-            "threats": threats
+            "risk_score": min(risk_score, 100),
+            "threats": threats,
+            "policy": policy_triggered
         }
