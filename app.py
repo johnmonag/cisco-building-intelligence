@@ -21,6 +21,8 @@ with st.sidebar:
     st.subheader("System Health")
     st.progress(98)
     st.caption("AI Engine Status: Operational")
+    st.write("**Model:** Claude 3.5 Sonnet")
+    st.write("**Latency:** 2.3s")
 
 # 2. SESSION STATE
 if "building" not in st.session_state: st.session_state.building = BuildingController()
@@ -36,21 +38,25 @@ solar, ev = get_live_data(82), get_live_data(68)
 st.title("🏢 Unified Building Intelligence Platform")
 st.markdown("---")
 
-# 5. DASHBOARD
+# 5. DASHBOARD (Live Tiles)
 st.subheader("📡 Live System Status")
 col1, col2, col3, col4 = st.columns(4)
 with col1:
     st.metric("Occupancy", f"{occ[-1]}%", f"{round(occ[-1]-occ[0], 1)} ↑")
     st_echarts(options=get_sparkline_options(occ), height=50)
+    st.caption("Cisco Spaces · WiFi")
 with col2:
     st.metric("Energy Draw", f"{eng[-1]} kW", f"{round(eng[-1]-eng[0], 1)} ↑")
     st_echarts(options=get_sparkline_options(eng, "#FF9900"), height=50)
+    st.caption("Smart Metering · OT")
 with col3:
     st.metric("Average Room Temp", f"{tmp[-1]}°C", f"{round(tmp[-1]-tmp[0], 1)} ↓")
     st_echarts(options=get_sparkline_options(tmp, "#00CC66"), height=50)
+    st.caption("Cisco Navigator · IT")
 with col4:
     st.metric("Active Tickets", f"{int(tic[-1])}", "0")
     st_echarts(options=get_sparkline_options(tic, "#FF4B4B"), height=50)
+    st.caption("ServiceNow · ITSM")
 
 # 6. BUILDING DIGITAL TWIN
 st.subheader("🏢 Building Digital Twin")
@@ -61,7 +67,6 @@ with status_col:
     zones = [("North Wing", occ[-1], "#FF4B4B"), ("Café Area", 45, "#00CC66"), ("Meeting Zone", 72, "#FF9900"), ("Executive", 28, "#00B5E2")]
     for z in zones: render_zone_status(z[0], z[1], z[2])
 
-# 6.5 SUPPLEMENTAL METRICS
 energy_cols = st.columns(2)
 with energy_cols[0]:
     st.write("### ☀️ Solar Panel Efficiency")
@@ -76,6 +81,7 @@ st.markdown("---")
 
 # 7. CHAT & REASONING
 left, right = st.columns([1, 1])
+
 def handle_query(query_text):
     st.session_state.messages.append({"role": "user", "content": query_text})
     with st.status("Analyzing building intelligence...", expanded=True) as status:
@@ -100,6 +106,15 @@ with right:
     st.subheader("💡 AI Reasoning & Insights")
     if "last_decision" in st.session_state:
         d = st.session_state.last_decision
+        
+        # Talos Integration
+        st.subheader("🛡 Cisco Talos Intelligence")
+        with st.spinner("Checking Cisco Talos global threat database..."):
+            time.sleep(0.8)
+            talos = st.session_state.engine.check_talos_reputation(st.session_state.messages[-1]["content"])
+        if talos["reputation"] == "CLEAN": st.success("✅ Talos Reputation: CLEAN")
+        else: st.error("🚫 Talos Reputation: MALICIOUS")
+
         st.info(f"**Explanation:** {d['reasoning']['explanation']}")
         if d["status"] == "BLOCKED":
             st.error("🚫 Security Policy Violation")
