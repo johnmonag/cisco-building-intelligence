@@ -8,9 +8,23 @@ class DefenseEngine:
         }
 
     def check_talos_reputation(self, request):
-        """Simulates a lookup against Cisco Talos Intelligence."""
-        # 10% chance of a "Malicious" reputation flag for demonstration
-        is_malicious = random.random() < 0.10 
+        """
+        Simulates a lookup against Cisco Talos Intelligence.
+        Now context-aware: flags malicious intent consistently.
+        """
+        req = request.lower()
+        # Malicious keywords that trigger a Talos flag
+        malicious_keywords = ["unlock", "bypass", "override", "ignore", "delete", "admin"]
+        
+        # If the request contains a threat, Talos flags it as MALICIOUS
+        if any(k in req for k in malicious_keywords):
+            return {
+                "reputation": "MALICIOUS",
+                "threat_category": "Unauthorized Access Attempt"
+            }
+        
+        # Otherwise, small chance of random noise, otherwise CLEAN
+        is_malicious = random.random() < 0.05 
         return {
             "reputation": "MALICIOUS" if is_malicious else "CLEAN",
             "threat_category": "Botnet C2" if is_malicious else "None"
@@ -22,17 +36,15 @@ class DefenseEngine:
         policy_triggered = "None"
         risk_score = 0
 
-        # 1. Run Talos Check
-        talos_data = self.check_talos_reputation(req)
-        
-        # 2. Existing Policy Check
+        # 1. Run Policy Check
         for policy, keywords in self.policies.items():
             if any(k in req for k in keywords):
                 threats.append(policy)
                 policy_triggered = policy
                 risk_score += 50
         
-        # Add Talos threat to the list if found
+        # 2. Run Talos Check
+        talos_data = self.check_talos_reputation(req)
         if talos_data["reputation"] == "MALICIOUS":
             threats.append(f"Talos Intelligence: {talos_data['threat_category']}")
             policy_triggered = "Talos Threat Intelligence"
