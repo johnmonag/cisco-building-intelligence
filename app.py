@@ -1,7 +1,7 @@
 import streamlit as st
 import time
 from utils import (get_sparkline_options, render_zone_status, get_live_data,
-                   get_hvac_anomaly_data, get_anomaly_chart_options)
+                   get_hvac_raw_datasets, get_single_line_options)
 from streamlit_echarts import st_echarts
 from building_controller import BuildingController
 from defense_engine import DefenseEngine
@@ -15,6 +15,7 @@ with st.sidebar:
     if st.button("🔄 Reset Demo Environment"):
         st.session_state.messages = []
         st.session_state.audit = AuditLog()
+        st.session_state.hvac_analyzed = False
         if "last_decision" in st.session_state: del st.session_state.last_decision
         st.rerun()
     live_mode = st.checkbox("Enable Live Mode (Auto-Refresh)", value=False)
@@ -30,6 +31,7 @@ if "building" not in st.session_state: st.session_state.building = BuildingContr
 if "engine" not in st.session_state: st.session_state.engine = DefenseEngine()
 if "audit" not in st.session_state: st.session_state.audit = AuditLog()
 if "messages" not in st.session_state: st.session_state.messages = []
+if "hvac_analyzed" not in st.session_state: st.session_state.hvac_analyzed = False
 
 # 3. DYNAMIC DATA
 occ, eng, tmp, tic = get_live_data(63), get_live_data(847), get_live_data(21.8), get_live_data(7)
@@ -85,10 +87,11 @@ left, right = st.columns([1, 1])
 
 def handle_query(query_text):
     st.session_state.messages.append({"role": "user", "content": query_text})
-    with st.status("Analyzing building intelligence...", expanded=True) as status:
+    st.session_state.hvac_analyzed = False  # Reset stage on new query
+    with st.status("Retrieving raw telemetry...", expanded=True) as status:
         time.sleep(1)
         decision = st.session_state.engine.evaluate(query_text)
-        status.update(label="Analysis Complete!", state="complete", expanded=False)
+        status.update(label="Data Retrieved!", state="complete", expanded=False)
     st.session_state.last_decision = decision
     st.session_state.audit.add_event(query_text, decision["status"], decision["risk_score"], decision["threats"])
     st.rerun()
@@ -110,20 +113,38 @@ with right:
         d = st.session_state.last_decision
         last_query = st.session_state.messages[-1]["content"].lower() if st.session_state.messages else ""
 
-        # HVAC Deep Dive
+        # --- HVAC DEEP DIVE (Two-Stage) ---
         if "hvac anomaly" in last_query:
-            st.error("⚠️ CRITICAL ANOMALY DETECTED: CHW Inlet at 206.1°C")
-            times, chw, lthw, power = get_hvac_anomaly_data()
-            st.write("### Raw Sensor Telemetry")
-            st_echarts(options=get_anomaly_chart_options(times, chw, lthw, power), height="300px")
-            tab1, tab2 = st.tabs(["🤖 AI Interpretation", "❌ Human 'False Alarm' View"])
-            with tab1:
+            times, datasets = get_hvac_raw_datasets()
+            colors = ["#FF4B4B", "#FF9900", "#8A2BE2", "#00B5E2", "#00CC66", "#555555"]
+
+            # STAGE 1: Raw Data Complexity
+            st.warning("⚠️ 6 sensor feeds ingested. Manual interpretation required.")
+            st.caption("Each sensor reports independently. No single feed tells the full story.")
+            raw_cols = st.columns(2)
+            for i, (name, data) in enumerate(datasets.items()):
+                with raw_cols[i % 2]:
+                    st.markdown(f"**{name}**")
+                    st_echarts(options=get_single_line_options(times, data, colors[i]), height="150px")
+
+            st.divider()
+
+            # STAGE 2: The "Analyze Data" Button
+            if not st.session_state.hvac_analyzed:
+                if st.button("🧠 Analyze Data with AI", type="primary", use_container_width=True):
+                    st.session_state.hvac_analyzed = True
+                    st.rerun()
+            else:
                 st.success("**AI Conclusion: Sensor Malfunction (95% Confidence)**")
-                st.write("The AI correlated the temperature spike with the **Mains Power lock at 35.4kW** (blue dashed line). Real boiling causes a gradual thermal ramp—not an instant spike and recovery. The AI identified this as an **Electrical Transient** corrupting the sensor circuit.")
-            with tab2:
-                st.warning("**Without AI:** An operator sees '206°C' and triggers an **Emergency Shutdown**, dispatching a crew for a $12,000 'phantom' repair.")
+                st.write("The AI correlated the temperature spikes with the **Mains Power lock at 35.4kW**. Because real boiling causes a *gradual* thermal ramp—not an instant spike and recovery—the AI identified this as an **Electrical Transient** corrupting the sensor circuits.")
+                tab1, tab2 = st.tabs(["📋 Action Plan", "❌ Human 'False Alarm' View"])
+                with tab1:
+                    st.info(d['reasoning']['recommendation'])
+                with tab2:
+                    st.error("**Without AI:** An operator sees '206°C' and triggers an **Emergency Shutdown**, dispatching a crew for a $12,000 'phantom' repair.")
+
+        # --- STANDARD QUERIES ---
         else:
-            # Talos + Standard Reasoning
             st.subheader("🛡 Cisco Talos Intelligence")
             with st.spinner("Checking Cisco Talos global threat database..."):
                 time.sleep(0.8)
