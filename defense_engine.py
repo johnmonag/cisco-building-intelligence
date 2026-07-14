@@ -10,21 +10,19 @@ class DefenseEngine:
     def check_talos_reputation(self, request):
         """
         Simulates a lookup against Cisco Talos Intelligence.
-        Now context-aware: flags malicious intent consistently.
+        Context-aware: flags malicious intent consistently.
         """
         req = request.lower()
-        # Malicious keywords that trigger a Talos flag
         malicious_keywords = ["unlock", "bypass", "override", "ignore", "delete", "admin"]
-        
-        # If the request contains a threat, Talos flags it as MALICIOUS
+
         if any(k in req for k in malicious_keywords):
             return {
                 "reputation": "MALICIOUS",
                 "threat_category": "Unauthorized Access Attempt"
             }
-        
-        # Otherwise, small chance of random noise, otherwise CLEAN
-        is_malicious = random.random() < 0.05 
+
+        # Small chance of random noise, otherwise CLEAN
+        is_malicious = random.random() < 0.05
         return {
             "reputation": "MALICIOUS" if is_malicious else "CLEAN",
             "threat_category": "Botnet C2" if is_malicious else "None"
@@ -42,7 +40,7 @@ class DefenseEngine:
                 threats.append(policy)
                 policy_triggered = policy
                 risk_score += 50
-        
+
         # 2. Run Talos Check
         talos_data = self.check_talos_reputation(req)
         if talos_data["reputation"] == "MALICIOUS":
@@ -59,6 +57,13 @@ class DefenseEngine:
                 "explanation": f"The request was blocked because it triggered a {policy_triggered} violation. Our security policy prohibits unauthorized system overrides to protect building integrity.",
                 "causality": "Unauthorized intent detected by Talos threat feed or policy engine.",
                 "recommendation": "Please contact the system administrator to request elevated privileges."
+            }
+        elif "hvac anomaly" in req or "sensor failure" in req:
+            reasoning = {
+                "sources": ["Splunk HVAC Index", "BMS Controller Logs", "Power Metering"],
+                "explanation": "AI detected 206°C readings but confirmed a sensor glitch, not a boiling event. Cross-referencing power draw (35.4kW) and the lack of thermal lag confirms a data corruption issue.",
+                "causality": "Electrical transient caused simultaneous multi-sensor circuit failure.",
+                "recommendation": "1. Inspect sensor wiring for EMI. 2. Test power quality at sensor circuits. 3. Flag 30 mins of data as corrupted."
             }
         elif "hvac" in req or "temperature" in req:
             reasoning = {
